@@ -23,6 +23,9 @@ Het resultaat staat daarna in `dist\AI Task Creator.exe` en kan zonder Python wo
 
 - Kies een projectlocatie.
 - Links verschijnen alle bestaande `task_*`-mappen, met de nieuwste bovenaan.
+- Als de gekozen projectlocatie `todo/` en `done/` bevat, verschijnen beide als
+  uitklapbare groepen. Nieuwe taken worden dan in `todo/` opgeslagen en de
+  nummering wordt over beide groepen bepaald.
 - Klik op een taak om de tekst en afbeeldingen opnieuw te laden.
 - Voeg afbeeldingen toe met de knop, een dubbelklik in het lege grid, of `Ctrl+V`.
 - Als het klembord tekst bevat, werkt `Ctrl+V` normaal in het tekstveld.

@@ -29,6 +29,7 @@ IMAGE_TYPES = {
 }
 TASK_PATTERN = re.compile(r"^task_(\d+)$", re.IGNORECASE)
 TASK_IMAGE_PATTERN = re.compile(r"^image_(\d+)(\.[^.]+)$", re.IGNORECASE)
+QUEUE_DIR_NAMES = ("todo", "done")
 SETTINGS_DIR = Path(os.getenv("APPDATA") or Path.home()) / "AI Task Creator"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
@@ -48,16 +49,54 @@ class TaskImage:
         return cls(image=image.copy(), label="Geplakte afbeelding")
 
 
+def task_collections(project_dir: Path) -> list[tuple[str, Path]]:
+    """Return the task directories exposed by a selected project location."""
+    if project_dir.is_dir():
+        try:
+            children = {
+                child.name.lower(): child
+                for child in project_dir.iterdir()
+                if child.is_dir()
+            }
+        except OSError:
+            children = {}
+        queue_dirs = [
+            (name, children[name])
+            for name in QUEUE_DIR_NAMES
+            if name in children
+        ]
+        if queue_dirs:
+            return queue_dirs
+    return [(project_dir.name or "tasks", project_dir)]
+
+
+def task_save_directory(project_dir: Path) -> Path:
+    """Choose where newly-created tasks belong for this project."""
+    collections = task_collections(project_dir)
+    if any(name in QUEUE_DIR_NAMES for name, _path in collections):
+        for name, path in collections:
+            if name == "todo":
+                return path
+        return project_dir / "todo"
+    return project_dir
+
+
 def next_task_number(project_dir: Path) -> int:
-    """Return one more than the highest existing task number."""
+    """Return one more than the highest task number in all visible groups."""
     highest = 0
-    if project_dir.exists():
-        for child in project_dir.iterdir():
-            if not child.is_dir():
-                continue
-            match = TASK_PATTERN.fullmatch(child.name)
-            if match:
-                highest = max(highest, int(match.group(1)))
+    for _name, collection_dir in task_collections(project_dir):
+        if not collection_dir.is_dir():
+            continue
+        try:
+            children = collection_dir.iterdir()
+            for child in children:
+                if not child.is_dir():
+                    continue
+                match = TASK_PATTERN.fullmatch(child.name)
+                if match:
+                    highest = max(highest, int(match.group(1)))
+        except OSError:
+            continue
     return highest + 1
 
 
@@ -74,16 +113,25 @@ def save_task(
     if existing_dir is None:
         task_number = next_task_number(project_dir)
         task_name = f"task_{task_number:03d}"
-        final_dir = project_dir / task_name
+        target_dir = task_save_directory(project_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_dir = target_dir.resolve()
+        final_dir = target_dir / task_name
     else:
         final_dir = existing_dir.resolve()
-        if final_dir.parent != project_dir or not TASK_PATTERN.fullmatch(final_dir.name):
-            raise ValueError("De bestaande taak staat niet direct in de projectmap.")
+        allowed_parents = {
+            path.resolve()
+            for _name, path in task_collections(project_dir)
+            if path.is_dir()
+        }
+        if final_dir.parent not in allowed_parents or not TASK_PATTERN.fullmatch(final_dir.name):
+            raise ValueError("De bestaande taak staat niet in een geldige taakmap.")
         if not final_dir.is_dir():
             raise FileNotFoundError(f"De taakmap bestaat niet meer: {final_dir}")
         task_name = final_dir.name
+        target_dir = final_dir.parent
 
-    temp_dir = Path(tempfile.mkdtemp(prefix=f".{task_name}-", dir=project_dir))
+    temp_dir = Path(tempfile.mkdtemp(prefix=f".{task_name}-", dir=target_dir))
     backup_dir: Path | None = None
 
     try:
@@ -97,7 +145,7 @@ def save_task(
             else:
                 raise ValueError(f"Afbeelding {index} heeft geen geldige bron.")
         if existing_dir is not None:
-            backup_dir = project_dir / f".{task_name}.backup-{uuid.uuid4().hex}"
+            backup_dir = target_dir / f".{task_name}.backup-{uuid.uuid4().hex}"
             final_dir.rename(backup_dir)
         try:
             temp_dir.rename(final_dir)
@@ -153,6 +201,7 @@ class TaskCreatorApp:
         self.mode_var = tk.StringVar(value="Nieuwe taak")
         self.save_label_var = tk.StringVar(value="Save new")
         self.task_paths: list[Path] = []
+        self.task_tree_paths: dict[str, Path] = {}
         self.selected_task: Path | None = None
         self.active_project = self.project_var.get().strip()
         self.dirty = False
@@ -218,20 +267,15 @@ class TaskCreatorApp:
         ttk.Label(sidebar, text="Tasks", style="Title.TLabel").pack(anchor="w", pady=(0, 10))
         list_frame = ttk.Frame(sidebar)
         list_frame.pack(fill="both", expand=True)
-        self.task_list = tk.Listbox(
+        self.task_tree = ttk.Treeview(
             list_frame,
-            width=22,
-            activestyle="none",
-            exportselection=False,
-            font=("Segoe UI", 10),
-            selectbackground="#2563eb",
-            selectforeground="white",
-            relief="solid",
-            borderwidth=1,
+            show="tree",
+            selectmode="browse",
+            height=20,
         )
-        task_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.task_list.yview)
-        self.task_list.configure(yscrollcommand=task_scrollbar.set)
-        self.task_list.pack(side="left", fill="both", expand=True)
+        task_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.task_tree.yview)
+        self.task_tree.configure(yscrollcommand=task_scrollbar.set)
+        self.task_tree.pack(side="left", fill="both", expand=True)
         task_scrollbar.pack(side="right", fill="y")
         ttk.Button(sidebar, text="Refresh", command=self.refresh_tasks).pack(fill="x", pady=(10, 0))
 
@@ -306,7 +350,7 @@ class TaskCreatorApp:
         self.text.bind("<<Modified>>", self._on_text_modified)
         self.location_entry.bind("<Return>", self._apply_project_location)
         self.location_entry.bind("<FocusOut>", self._apply_project_location)
-        self.task_list.bind("<<ListboxSelect>>", self._on_task_selected)
+        self.task_tree.bind("<<TreeviewSelect>>", self._on_task_selected)
 
     def _mark_dirty(self) -> None:
         if self.loading:
@@ -347,41 +391,51 @@ class TaskCreatorApp:
     def refresh_tasks(self) -> None:
         selected = self.selected_task
         self.task_paths = []
+        self.task_tree_paths = {}
+
+        self.suppress_task_selection = True
+        for item in self.task_tree.get_children():
+            self.task_tree.delete(item)
 
         project_text = self.active_project.strip()
         if project_text:
             project_dir = Path(project_text).expanduser()
             if project_dir.is_dir():
-                candidates: list[tuple[int, Path]] = []
-                try:
-                    for child in project_dir.iterdir():
-                        match = TASK_PATTERN.fullmatch(child.name)
-                        if match and child.is_dir():
-                            candidates.append((int(match.group(1)), child.resolve()))
-                except OSError:
-                    candidates = []
-                candidates.sort(key=lambda item: item[0], reverse=True)
-                self.task_paths = [path for _number, path in candidates]
-
-        self.suppress_task_selection = True
-        self.task_list.delete(0, "end")
-        for path in self.task_paths:
-            self.task_list.insert("end", path.name)
-        if selected is not None:
-            for index, path in enumerate(self.task_paths):
-                if path == selected:
-                    self.task_list.selection_set(index)
-                    self.task_list.see(index)
-                    break
+                collections = task_collections(project_dir)
+                grouped = len(collections) > 1 or collections[0][0] in QUEUE_DIR_NAMES
+                for group_index, (name, collection_dir) in enumerate(collections):
+                    parent = ""
+                    if grouped:
+                        parent = f"group:{group_index}"
+                        self.task_tree.insert("", "end", iid=parent, text=name, open=True)
+                    candidates: list[tuple[int, Path]] = []
+                    try:
+                        for child in collection_dir.iterdir():
+                            match = TASK_PATTERN.fullmatch(child.name)
+                            if match and child.is_dir():
+                                candidates.append((int(match.group(1)), child.resolve()))
+                    except OSError:
+                        candidates = []
+                    candidates.sort(key=lambda item: item[0], reverse=True)
+                    for _number, path in candidates:
+                        item_id = f"task:{len(self.task_paths)}"
+                        self.task_paths.append(path)
+                        self.task_tree_paths[item_id] = path
+                        self.task_tree.insert(parent, "end", iid=item_id, text=path.name)
+                        if path == selected:
+                            self.task_tree.selection_set(item_id)
+                            self.task_tree.see(item_id)
         self.suppress_task_selection = False
 
     def _on_task_selected(self, _event: tk.Event) -> None:
         if self.suppress_task_selection:
             return
-        selection = self.task_list.curselection()
+        selection = self.task_tree.selection()
         if not selection:
             return
-        target = self.task_paths[selection[0]]
+        target = self.task_tree_paths.get(selection[0])
+        if target is None:
+            return
         if target == self.selected_task:
             return
 
@@ -396,12 +450,12 @@ class TaskCreatorApp:
 
     def _restore_task_selection(self) -> None:
         self.suppress_task_selection = True
-        self.task_list.selection_clear(0, "end")
+        self.task_tree.selection_set(())
         if self.selected_task is not None:
-            for index, path in enumerate(self.task_paths):
+            for item_id, path in self.task_tree_paths.items():
                 if path == self.selected_task:
-                    self.task_list.selection_set(index)
-                    self.task_list.see(index)
+                    self.task_tree.selection_set(item_id)
+                    self.task_tree.see(item_id)
                     break
         self.suppress_task_selection = False
 
@@ -636,7 +690,7 @@ class TaskCreatorApp:
         self._clear_editor()
         self.selected_task = None
         self.suppress_task_selection = True
-        self.task_list.selection_clear(0, "end")
+        self.task_tree.selection_set(())
         self.suppress_task_selection = False
         self._update_mode()
         self.status_var.set("Nieuwe lege taak")
