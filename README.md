@@ -44,8 +44,8 @@ Het resultaat staat daarna in `dist/AI Task Creator.app` en kan zonder Python wo
   uitklapbare groepen. Nieuwe taken worden dan in `todo/` opgeslagen en de
   nummering wordt over beide groepen bepaald.
 - Klik op een taak om de tekst en afbeeldingen opnieuw te laden.
-- Voeg afbeeldingen toe met de knop, een dubbelklik in het lege grid, of `Ctrl+V`.
-- Als het klembord tekst bevat, werkt `Ctrl+V` normaal in het tekstveld.
+- Voeg afbeeldingen toe met de knop, een dubbelklik in het lege grid, of `Cmd+V` op Mac / `Ctrl+V` op Windows.
+- Als het klembord tekst bevat, werkt plakken normaal in het tekstveld.
 - Verwijder een afbeelding met het rode kruisje rechtsboven.
 - `Save new` maakt de volgende oplopende taak met `task.txt` en genummerde afbeeldingen.
 - `Update task_xxx` vervangt de geopende taak veilig.
