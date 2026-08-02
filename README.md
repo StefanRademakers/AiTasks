@@ -2,7 +2,7 @@
 
 Een kleine desktopapp waarmee je tekst en afbeeldingen opslaat als opeenvolgende taken.
 
-## Installeren en starten
+## Installeren en starten op Windows
 
 1. Dubbelklik eenmalig op `setup.bat`.
 2. Dubbelklik daarna op `run.bat` (met console) of `start.bat` (zonder console).
@@ -14,10 +14,27 @@ Of vanuit PowerShell:
 .\run.bat
 ```
 
+## Installeren en starten op Mac
+
+1. Dubbelklik eenmalig op `setup.command`.
+2. Dubbelklik daarna op `run.command` (met Terminal-uitvoer) of `start.command` (losgekoppeld).
+
+Of vanuit Terminal:
+
+```zsh
+./setup.command
+./run.command
+```
+
 ## Windows EXE bouwen
 
 Dubbelklik op `build.bat`. De eerste build installeert PyInstaller in de lokale `.venv`.
 Het resultaat staat daarna in `dist\AI Task Creator.exe` en kan zonder Python worden gestart.
+
+## Mac app bouwen
+
+Dubbelklik op `build.command`. De eerste build installeert PyInstaller in de lokale `.venv`.
+Het resultaat staat daarna in `dist/AI Task Creator.app` en kan zonder Python worden gestart.
 
 ## Gebruik
 
