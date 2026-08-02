@@ -4,8 +4,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import uuid
+from binascii import Error as BinasciiError
+from binascii import unhexlify
+from io import BytesIO
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -32,6 +37,7 @@ TASK_IMAGE_PATTERN = re.compile(r"^image_(\d+)(\.[^.]+)$", re.IGNORECASE)
 QUEUE_DIR_NAMES = ("todo", "done")
 SETTINGS_DIR = Path(os.getenv("APPDATA") or Path.home()) / "AI Task Creator"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+MACOS_IMAGE_CLIPBOARD_TYPES = ("PNGf", "TIFF")
 
 
 @dataclass
@@ -79,6 +85,50 @@ def task_save_directory(project_dir: Path) -> Path:
                 return path
         return project_dir / "todo"
     return project_dir
+
+
+def decode_macos_clipboard_data(output: bytes, clipboard_type: str) -> bytes | None:
+    text = output.strip()
+    prefix = f"«data {clipboard_type}".encode("utf-8")
+    suffix = "»".encode("utf-8")
+    if not text.startswith(prefix) or not text.endswith(suffix):
+        return None
+
+    try:
+        return unhexlify(text[len(prefix):-len(suffix)])
+    except BinasciiError:
+        return None
+
+
+def grab_macos_clipboard_image() -> Image.Image | None:
+    for clipboard_type in MACOS_IMAGE_CLIPBOARD_TYPES:
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", f"get the clipboard as «class {clipboard_type}»"],
+                capture_output=True,
+            )
+        except OSError:
+            return None
+        if result.returncode != 0:
+            continue
+
+        data = decode_macos_clipboard_data(result.stdout, clipboard_type)
+        if data is None:
+            continue
+        try:
+            image = Image.open(BytesIO(data))
+            image.load()
+            return image
+        except (OSError, UnidentifiedImageError):
+            continue
+    return None
+
+
+def grab_clipboard_content() -> Image.Image | list[str] | None:
+    if sys.platform == "darwin":
+        return grab_macos_clipboard_image()
+
+    return ImageGrab.grabclipboard()
 
 
 def next_task_number(project_dir: Path) -> int:
@@ -284,7 +334,7 @@ class TaskCreatorApp:
         ttk.Label(top_row, text="Afbeeldingen", style="Title.TLabel").pack(side="left")
         ttk.Label(
             top_row,
-            text="Plak met Ctrl+V of kies bestanden",
+            text="Plak met Cmd+V/Ctrl+V of kies bestanden",
             style="Hint.TLabel",
         ).pack(side="left", padx=(14, 0), pady=(6, 0))
         ttk.Button(top_row, text="+ Afbeeldingen", command=self.add_files).pack(side="right")
@@ -342,9 +392,10 @@ class TaskCreatorApp:
     def _bind_shortcuts(self) -> None:
         # Widget bindings run before Tk's standard Text/Entry bindings. This lets
         # image clipboard content go to the grid while ordinary text still pastes.
-        self.text.bind("<Control-v>", self.handle_paste)
-        self.location_entry.bind("<Control-v>", self.handle_paste)
-        self.root.bind_all("<Control-v>", self.handle_paste, add="+")
+        for sequence in ("<Control-v>", "<Command-v>"):
+            self.text.bind(sequence, self.handle_paste)
+            self.location_entry.bind(sequence, self.handle_paste)
+            self.root.bind_all(sequence, self.handle_paste, add="+")
         self.root.bind("<Control-s>", lambda _event: self.save())
         self.root.bind("<Control-n>", lambda _event: self.new_task())
         self.text.bind("<<Modified>>", self._on_text_modified)
@@ -549,7 +600,7 @@ class TaskCreatorApp:
 
     def handle_paste(self, event: tk.Event) -> str | None:
         try:
-            clipboard = ImageGrab.grabclipboard()
+            clipboard = grab_clipboard_content()
         except (OSError, NotImplementedError):
             return None
 
@@ -601,7 +652,7 @@ class TaskCreatorApp:
             ).pack()
             tk.Label(
                 empty,
-                text="Ctrl+V, dubbelklik of gebruik ‘+ Afbeeldingen’",
+                text="Cmd+V/Ctrl+V, dubbelklik of gebruik ‘+ Afbeeldingen’",
                 background="#f3f4f6",
                 foreground="#6b7280",
                 font=("Segoe UI", 9),

@@ -2,10 +2,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from task_creator import next_task_number, save_task, task_collections
+from task_creator import (
+    decode_macos_clipboard_data,
+    next_task_number,
+    save_task,
+    task_collections,
+)
 
 
 class TaskStorageTests(unittest.TestCase):
+    def test_decodes_macos_osascript_image_data(self) -> None:
+        self.assertEqual(
+            decode_macos_clipboard_data("«data TIFF48656c6c6f»\n".encode("utf-8"), "TIFF"),
+            b"Hello",
+        )
+
     def test_queue_root_exposes_todo_and_done(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
