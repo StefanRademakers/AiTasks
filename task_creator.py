@@ -10,8 +10,8 @@ import tempfile
 import uuid
 from binascii import Error as BinasciiError
 from binascii import unhexlify
-from io import BytesIO
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Callable
 
@@ -38,6 +38,7 @@ QUEUE_DIR_NAMES = ("todo", "done")
 SETTINGS_DIR = Path(os.getenv("APPDATA") or Path.home()) / "AI Task Creator"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 MACOS_IMAGE_CLIPBOARD_TYPES = ("PNGf", "TIFF")
+PASTE_SHORTCUT_LABEL = "Cmd+V" if sys.platform == "darwin" else "Ctrl+V"
 
 
 @dataclass
@@ -334,7 +335,7 @@ class TaskCreatorApp:
         ttk.Label(top_row, text="Afbeeldingen", style="Title.TLabel").pack(side="left")
         ttk.Label(
             top_row,
-            text="Plak met Cmd+V/Ctrl+V of kies bestanden",
+            text=f"Plak met {PASTE_SHORTCUT_LABEL} of kies bestanden",
             style="Hint.TLabel",
         ).pack(side="left", padx=(14, 0), pady=(6, 0))
         ttk.Button(top_row, text="+ Afbeeldingen", command=self.add_files).pack(side="right")
@@ -392,7 +393,10 @@ class TaskCreatorApp:
     def _bind_shortcuts(self) -> None:
         # Widget bindings run before Tk's standard Text/Entry bindings. This lets
         # image clipboard content go to the grid while ordinary text still pastes.
-        for sequence in ("<Control-v>", "<Command-v>"):
+        paste_sequences = ["<Control-v>"]
+        if sys.platform == "darwin":
+            paste_sequences.append("<Command-v>")
+        for sequence in paste_sequences:
             self.text.bind(sequence, self.handle_paste)
             self.location_entry.bind(sequence, self.handle_paste)
             self.root.bind_all(sequence, self.handle_paste, add="+")
@@ -652,7 +656,7 @@ class TaskCreatorApp:
             ).pack()
             tk.Label(
                 empty,
-                text="Cmd+V/Ctrl+V, dubbelklik of gebruik ‘+ Afbeeldingen’",
+                text=f"{PASTE_SHORTCUT_LABEL}, dubbelklik of gebruik ‘+ Afbeeldingen’",
                 background="#f3f4f6",
                 foreground="#6b7280",
                 font=("Segoe UI", 9),
