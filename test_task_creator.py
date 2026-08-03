@@ -62,6 +62,28 @@ class TaskStorageTests(unittest.TestCase):
 
             self.assertEqual(saved, root.resolve() / "task_004")
 
+    def test_suffix_task_names_are_counted_for_next_number(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "task_021_gpu_text_phase_0").mkdir()
+            (root / "task_022_gpu_text_canonical_layer").mkdir()
+            (root / "task_024_gpu_text_font_registry").mkdir()
+
+            self.assertEqual(next_task_number(root), 25)
+
+    def test_updating_suffix_task_name_is_allowed(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = root / "todo" / "task_021_gpu_text_phase_0"
+            task.mkdir(parents=True)
+            (root / "done").mkdir()
+            (task / "task.txt").write_text("Oud", encoding="utf-8")
+
+            saved = save_task(root, "Bijgewerkt", [], existing_dir=task)
+
+            self.assertEqual(saved, task.resolve())
+            self.assertEqual((task / "task.txt").read_text(encoding="utf-8"), "Bijgewerkt")
+
 
 if __name__ == "__main__":
     unittest.main()

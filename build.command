@@ -20,6 +20,8 @@ echo "Applicatie bouwen..."
     --clean \
     --windowed \
     --name "AI Task Creator" \
+    --add-data "$APP_DIR/icon/icon.ico:icon" \
+    --add-data "$APP_DIR/icon/icon.png:icon" \
     task_creator.py
 
 echo

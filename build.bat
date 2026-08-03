@@ -24,6 +24,9 @@ echo Applicatie bouwen...
     --onefile ^
     --windowed ^
     --name "AI Task Creator" ^
+    --icon "icon\icon.ico" ^
+    --add-data "icon\icon.ico;icon" ^
+    --add-data "icon\icon.png;icon" ^
     task_creator.py
 if errorlevel 1 (
     echo Build mislukt.

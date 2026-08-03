@@ -22,6 +22,7 @@ from PIL import Image, ImageGrab, ImageOps, ImageTk, UnidentifiedImageError
 
 
 APP_TITLE = "AI Task Creator"
+APP_USER_MODEL_ID = "Mediavibe.AITaskCreator"
 IMAGE_TYPES = {
     ".bmp",
     ".gif",
@@ -32,13 +33,18 @@ IMAGE_TYPES = {
     ".tiff",
     ".webp",
 }
-TASK_PATTERN = re.compile(r"^task_(\d+)$", re.IGNORECASE)
+TASK_PATTERN = re.compile(r"^task_(\d+)(?:[._-].+)?$", re.IGNORECASE)
 TASK_IMAGE_PATTERN = re.compile(r"^image_(\d+)(\.[^.]+)$", re.IGNORECASE)
 QUEUE_DIR_NAMES = ("todo", "done")
 SETTINGS_DIR = Path(os.getenv("APPDATA") or Path.home()) / "AI Task Creator"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 MACOS_IMAGE_CLIPBOARD_TYPES = ("PNGf", "TIFF")
 PASTE_SHORTCUT_LABEL = "Cmd+V" if sys.platform == "darwin" else "Ctrl+V"
+
+
+def resource_path(relative_path: str) -> Path:
+    base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_dir / relative_path
 
 
 @dataclass
@@ -132,6 +138,13 @@ def grab_clipboard_content() -> Image.Image | list[str] | None:
     return ImageGrab.grabclipboard()
 
 
+def task_number_from_name(name: str) -> int | None:
+    match = TASK_PATTERN.fullmatch(name)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def next_task_number(project_dir: Path) -> int:
     """Return one more than the highest task number in all visible groups."""
     highest = 0
@@ -143,9 +156,9 @@ def next_task_number(project_dir: Path) -> int:
             for child in children:
                 if not child.is_dir():
                     continue
-                match = TASK_PATTERN.fullmatch(child.name)
-                if match:
-                    highest = max(highest, int(match.group(1)))
+                task_number = task_number_from_name(child.name)
+                if task_number is not None:
+                    highest = max(highest, task_number)
         except OSError:
             continue
     return highest + 1
@@ -175,7 +188,7 @@ def save_task(
             for _name, path in task_collections(project_dir)
             if path.is_dir()
         }
-        if final_dir.parent not in allowed_parents or not TASK_PATTERN.fullmatch(final_dir.name):
+        if final_dir.parent not in allowed_parents or task_number_from_name(final_dir.name) is None:
             raise ValueError("De bestaande taak staat niet in een geldige taakmap.")
         if not final_dir.is_dir():
             raise FileNotFoundError(f"De taakmap bestaat niet meer: {final_dir}")
@@ -241,6 +254,8 @@ class TaskCreatorApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
+        self._window_icon_ref: tk.PhotoImage | None = None
+        self._apply_window_icon()
         self.root.title(APP_TITLE)
         self.root.geometry("1120x720")
         self.root.minsize(820, 560)
@@ -265,6 +280,31 @@ class TaskCreatorApp:
         self._render_grid()
         self.refresh_tasks()
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+
+    def _apply_window_icon(self) -> None:
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+            except Exception:
+                pass
+
+        icon_ico = resource_path("icon/icon.ico")
+        if icon_ico.is_file():
+            try:
+                self.root.iconbitmap(default=str(icon_ico))
+            except tk.TclError:
+                pass
+
+        icon_png = resource_path("icon/icon.png")
+        if icon_png.is_file():
+            try:
+                icon = tk.PhotoImage(file=str(icon_png))
+                self.root.iconphoto(True, icon)
+                self._window_icon_ref = icon
+            except tk.TclError:
+                pass
 
     @staticmethod
     def _load_last_project() -> str:
@@ -466,9 +506,9 @@ class TaskCreatorApp:
                     candidates: list[tuple[int, Path]] = []
                     try:
                         for child in collection_dir.iterdir():
-                            match = TASK_PATTERN.fullmatch(child.name)
-                            if match and child.is_dir():
-                                candidates.append((int(match.group(1)), child.resolve()))
+                            task_number = task_number_from_name(child.name)
+                            if task_number is not None and child.is_dir():
+                                candidates.append((task_number, child.resolve()))
                     except OSError:
                         candidates = []
                     candidates.sort(key=lambda item: item[0], reverse=True)
